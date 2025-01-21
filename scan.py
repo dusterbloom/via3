@@ -17,12 +17,35 @@ OUTPUT_CSV = "pdf_matches.csv"
 # Example patterns: coordinates (various forms), turbine models, etc.
 # You can make them as broad or specific as needed:
 PATTERNS = [
-    re.compile(r"(WGS84|coordinate)", re.IGNORECASE),                        
-    re.compile(r"\d{1,2}°\d{1,2}'\d{1,2}\.\d+\"?"),           
-    re.compile(r"\b(utm|mappali|mappale|foglio|particella)\b", re.IGNORECASE), 
-    re.compile(r"(nordex|vestas|siemens)", re.IGNORECASE),                  
+    # Original patterns
+    re.compile(r"(WGS84|coordinate)", re.IGNORECASE),
+
+    # Decimal degrees (DD) format
+    # Examples: 41.40338, 2.17403 or 41°24'12.2"N 2°10'26.5"E
+    #re.compile(r"\b\d{1,3}[°d]\s*\d{1,2}[′'m]\s*\d{1,2}(\.\d+)?[″"s]\s*[NSEW]\b", re.IGNORECASE),
+
+    re.compile(r"\b[-+]?[0-9]*\.?[0-9]+°?\s*[NS]?\s*,?\s*[-+]?[0-9]*\.?[0-9]+°?\s*[EW]?\b", re.IGNORECASE),
+
+    # Degrees, minutes, seconds (DMS) format
+    # Examples: 41°24'12.2"N or 2°10'26.5"E
+    re.compile(r"\b\d{1,3}°\s*\d{1,2}'\s*\d{1,2}(\.\d+)?\"?\s*[NSEW]\b", re.IGNORECASE),
+
+    # Degrees and decimal minutes (DMM) format
+    # Example: 41 24.2028, 2 10.4418
+    re.compile(r"\b\d{1,3}°?\s*\d{1,2}\.\d+['′]?\s*[NSEW]?\b", re.IGNORECASE),
+
+    # UTM coordinates
+    # Example: 31N 430959.54 4581999.91
+    re.compile(r"\b\d{1,2}[NS]\s*\d{6,7}(\.\d+)?\s*\d{6,7}(\.\d+)?\b", re.IGNORECASE),
+
+    # Italian cadastral references
+    re.compile(r"\b(foglio|particella|mappale)\s*n?\.*\s*\d+\b", re.IGNORECASE),
+    re.compile(r"\bmappali\s*n?\.*\s*\d+(?:\s*,\s*\d+)*\b", re.IGNORECASE),
+
+    # Your existing patterns for other matches
+    re.compile(r"(nordex|vestas|siemens)", re.IGNORECASE),
     re.compile(r"\baltezza\b|\baltitudine\b|\bhub\b|\btip\b|\blama\b|\bblade\b|\brotore\b|\bdiametro\b", re.IGNORECASE)
-]
+]]
 
 
 # Configure logging
