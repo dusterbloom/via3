@@ -109,7 +109,7 @@ def collect_search_results(keyword: str, search_type="o"):
     print(f"{Fore.CYAN}[INFO] Total projects found: {len(all_projects)}{Style.RESET_ALL}")
     return all_projects
 
-def save_projects_csv(projects, output="projects_list.csv"):
+def save_projects_csv(projects, output="lista.csv"):
     """Save projects to CSV file"""
     fieldnames = ["id", "url", "doc_url", "title", "proponent", "status", "include"]
     with open(output, 'w', newline='', encoding='utf-8') as f:

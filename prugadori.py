@@ -11,10 +11,9 @@ from colorama import init, Fore, Style
 init()  # Initialize colorama
 
 
-PDF_FOLDER = "downloads/Serramanna"  # or wherever your PDFs are
+PDF_FOLDER = "/Volumes/1TB/BARUMINI/downloads/Tuili/Progetti/8459/"  # or wherever your PDFs are
 OUTPUT_CSV = "pdf_matches.csv"
 
-# Example patterns: coordinates (various forms), turbine models, etc.
 # You can make them as broad or specific as needed:
 PATTERNS = [
     # Original patterns
@@ -45,7 +44,8 @@ PATTERNS = [
     # Your existing patterns for other matches
     re.compile(r"(nordex|vestas|siemens)", re.IGNORECASE),
     re.compile(r"\baltezza\b|\baltitudine\b|\bhub\b|\btip\b|\blama\b|\bblade\b|\brotore\b|\bdiametro\b", re.IGNORECASE)
-]]
+]
+
 
 
 # Configure logging
