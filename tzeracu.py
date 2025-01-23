@@ -193,6 +193,38 @@ def get_document_links(procedura_url: str):
     print(f"[INFO] Found {len(doc_links)} total document links in {procedura_url}.")
     return doc_links
 
+def get_project_info(detail_url: str) -> tuple:
+    """
+    Extract both project ID and description from a detail URL.
+    Returns tuple of (project_id, description)
+    """
+    project_id = "UnknownProject"
+    description = "NoDescription"
+    
+    try:
+        resp = requests.get(detail_url, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        
+        # Extract project ID from URL
+        match = re.search(r'/Info/(\d+)', detail_url)
+        if match:
+            project_id = match.group(1)
+            
+        # Find the table cell containing "Oggetto:" and get the next cell's content
+        oggetto_cell = soup.find("td", string="Oggetto:")
+        if oggetto_cell and oggetto_cell.find_next("td"):
+            description = oggetto_cell.find_next("td").text.strip()
+            # Sanitize description for use in folder name
+            description = re.sub(r'[\\/*?:"<>|]', "_", description)
+            description = description[:100]  # Limit length to avoid too long paths
+            
+    except Exception as e:
+        print(f"[WARN] Could not extract project info from {detail_url}: {e}")
+    
+    return project_id, description
+
+
 def download_file(url: str, nome_file: str, save_path: str):
     """
     Step 4: Download the file from the given URL, saving it under 'nome_file' in 'save_path'.
@@ -250,9 +282,11 @@ def main():
     detail_urls = collect_search_results(keyword, search_type=search_type)
 
     # Step 2: For each detail link, determine project ID, get procedure links, and download docs
+        # Step 2: For each detail link, determine project info, get procedure links, and download docs
     for detail_url in detail_urls:
-        project_id = get_project_id(detail_url)
-        project_folder = os.path.join(base_save_dir, project_id)
+        project_id, description = get_project_info(detail_url)
+        folder_name = f"{project_id}_{description}"
+        project_folder = os.path.join(base_save_dir, folder_name)
         os.makedirs(project_folder, exist_ok=True)
 
         procedure_urls = get_procedura_links(detail_url, search_type=search_type)
@@ -263,6 +297,7 @@ def main():
                 time.sleep(DELAY_BETWEEN_REQUESTS)
 
         time.sleep(DELAY_BETWEEN_REQUESTS)
+
 
     print("[INFO] Scraping completed successfully.")
 
