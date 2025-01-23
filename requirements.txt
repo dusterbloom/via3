@@ -1,0 +1,5 @@
+requests>=2.25.0
+beautifulsoup4>=4.9.0
+pdfplumber
+tqdm>=4.65.0
+colorama>=0.4.6
