@@ -10,9 +10,8 @@ from tqdm import tqdm
 from colorama import init, Fore, Style
 init()  # Initialize colorama
 
-
-PDF_FOLDER = "/Volumes/1TB/BARUMINI/downloads/Tuili/Progetti/8459/"  # or wherever your PDFs are
-OUTPUT_CSV = "pdf_matches.csv"
+# PDF_FOLDER = "C:\Users\PC\Dev\via2\downloads\Serramanna" 
+#OUTPUT_CSV = "scan_serramanna.csv"
 
 # You can make them as broad or specific as needed:
 PATTERNS = [
@@ -58,26 +57,42 @@ logging.basicConfig(
     ]
 )
 
+def get_all_pdfs(base_folder: str) -> list:
+    """
+    Recursively find all PDF files in base_folder and its subfolders.
+    Returns a list of full paths to PDF files.
+    """
+    pdf_files = []
+    for root, _, files in os.walk(base_folder):
+        for file in files:
+            if file.lower().endswith('.pdf'):
+                full_path = os.path.join(root, file)
+                pdf_files.append(full_path)
+                logging.info(f"Found PDF: {full_path}")
+    return pdf_files
+
 def search_pdfs_in_folder(folder_path, patterns):
     """
-    Recursively search all PDFs in `folder_path`. For each PDF, open it,
-    extract text line-by-line, and see if it matches any pattern in `patterns`.
+    Recursively search all PDFs in `folder_path` and its subfolders.
+    For each PDF, extract text line-by-line, and see if it matches any pattern in `patterns`.
     Return list of results: [(pdf_file, page_num, line_num, text_line), ...]
     """
     all_matches = []
-    pdf_files = [os.path.join(root, f) 
-                for root, _, files in os.walk(folder_path)
-                for f in files if f.lower().endswith('.pdf')]
+    pdf_files = get_all_pdfs(folder_path)
 
     # Add progress bar
     with tqdm(total=len(pdf_files), desc="Scanning PDFs") as pbar:
         for pdf_path in pdf_files:
-            logging.info(f"Processing: {pdf_path}")
-            matches = search_single_pdf(pdf_path, patterns)
-            all_matches.extend(matches)
-            pbar.update(1)
-            if matches:
-                logging.info(f"Found {len(matches)} matches in {pdf_path}")
+            try:
+                logging.info(f"Processing: {pdf_path}")
+                matches = search_single_pdf(pdf_path, patterns)
+                all_matches.extend(matches)
+                if matches:
+                    logging.info(f"Found {len(matches)} matches in {pdf_path}")
+            except Exception as e:
+                logging.error(f"Error processing {pdf_path}: {e}")
+            finally:
+                pbar.update(1)
     
     return all_matches
 
@@ -110,13 +125,27 @@ def write_csv(results, output_csv):
             writer.writerow([pdf_file, page_num, line_num, matched_line])
 
 def main():
+    # Prompt user for the base folder
+    folder_path = input("Inserisci la cartella da cui partire (lo scan include le sottocartelle): ").strip()
+    if not os.path.exists(folder_path):
+        print(f"{Fore.RED}[ERROR] Folder not found: {folder_path}{Style.RESET_ALL}")
+        return
+
     # 1) Recursively find & parse all PDFs
-    logging.info(f"{Fore.CYAN}Starting PDF scan...{Style.RESET_ALL}")
-    matches = search_pdfs_in_folder(PDF_FOLDER, PATTERNS)
+    logging.info(f"{Fore.CYAN}Starting PDF scan in {folder_path} and all subfolders...{Style.RESET_ALL}")
+    matches = search_pdfs_in_folder(folder_path, PATTERNS)
 
     # 2) Write results to CSV
-    write_csv(matches, OUTPUT_CSV)
-    print(f"{Fore.GREEN}Found {len(matches)} matches! Results written to {OUTPUT_CSV}{Style.RESET_ALL}")
+    output_csv = "scan_results.csv"
+    write_csv(matches, output_csv)
+    print(f"{Fore.GREEN}Found {len(matches)} matches! Results written to {output_csv}{Style.RESET_ALL}")
+
+    # Print summary
+    pdf_count = len(set(match[0] for match in matches))  # unique PDFs with matches
+    print(f"\nSummary:")
+    print(f"- Total matches found: {len(matches)}")
+    print(f"- PDFs with matches: {pdf_count}")
+    print(f"- Results saved to: {output_csv}")
 
 if __name__ == "__main__":
     main()
