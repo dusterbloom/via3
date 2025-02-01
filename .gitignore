@@ -2,3 +2,6 @@
 downloads/
 .csv
 .log
+
+node_modules/
+.next/
