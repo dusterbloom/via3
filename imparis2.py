@@ -34,15 +34,44 @@ logging.basicConfig(
 def setup_nlp():
     """
     Setup spaCy NLP pipeline with Italian language model
+    Enables GPU if available
     """
     try:
+        # Check if CUDA is available
+        import torch
+        gpu_available = torch.cuda.is_available()
+        if gpu_available:
+            print(f"{Fore.GREEN}[INFO] CUDA GPU detected. Using GPU acceleration.{Style.RESET_ALL}")
+            spacy.require_gpu()
+            device_info = torch.cuda.get_device_properties(0)
+            print(f"{Fore.CYAN}[INFO] GPU: {device_info.name}, Memory: {device_info.total_memory / 1024**3:.1f}GB{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.YELLOW}[INFO] No GPU detected. Using CPU.{Style.RESET_ALL}")
+
+        # Load the model
+        try:
+            nlp = spacy.load("it_core_news_lg")
+        except OSError:
+            print(f"{Fore.YELLOW}[INFO] Downloading Italian language model...{Style.RESET_ALL}")
+            os.system("python -m spacy download it_core_news_lg")
+            nlp = spacy.load("it_core_news_lg")
+        
+        # Set up pipeline optimization
+        if gpu_available:
+            nlp.to_disk("model_gpu")  # Save model to disk
+            nlp = spacy.load("model_gpu")  # Reload with GPU settings
+        
+        # Display pipeline info
+        print(f"{Fore.CYAN}[INFO] Pipeline components: {', '.join(nlp.pipe_names)}")
+        print(f"[INFO] Processing device: {nlp.pipe_labels['transformer'].device if 'transformer' in nlp.pipe_labels else 'CPU'}{Style.RESET_ALL}")
+        
+        return nlp
+        
+    except Exception as e:
+        print(f"{Fore.RED}[ERROR] Failed to initialize NLP engine: {str(e)}")
+        print(f"[INFO] Falling back to CPU-only mode{Style.RESET_ALL}")
         nlp = spacy.load("it_core_news_lg")
-    except OSError:
-        print(f"{Fore.YELLOW}[INFO] Downloading Italian language model...{Style.RESET_ALL}")
-        os.system("python -m spacy download it_core_news_lg")
-        nlp = spacy.load("it_core_news_lg")
-    
-    return nlp
+        return nlp
 
 def setup_matchers(nlp):
     """
@@ -50,47 +79,41 @@ def setup_matchers(nlp):
     """
     matcher = Matcher(nlp.vocab)
     
-    # Geographic coordinates patterns
+def setup_matchers(nlp):
+    """
+    Setup spaCy matchers focusing on Italian government coordinate formats
+    """
+    matcher = Matcher(nlp.vocab)
+    
+    # Geographic coordinates patterns - Italian government format
     matcher.add("COORDINATES", [
-        # WGS84 format
+        # Format: 00°00'00"N 00°00'00"E
         [
-            {"LOWER": "wgs84"},
+            {"TEXT": {"REGEX": r"\d{1,3}°\d{1,2}'\d{1,2}\"[Nn]"}},
             {"IS_SPACE": True, "OP": "?"},
-            {"TEXT": {"REGEX": r"\d+[.,]\d+"}},
-            {"TEXT": {"REGEX": r"[NSns]"}},
-            {"TEXT": {"REGEX": r"\d+[.,]\d+"}},
-            {"TEXT": {"REGEX": r"[EWew]"}}
+            {"TEXT": {"REGEX": r"\d{1,3}°\d{1,2}'\d{1,2}\"[Ee]"}}
         ],
         
-        # Decimal degrees
+        # Format with labeled coordinates: Latitudine/Longitudine
         [
-            {"TEXT": {"REGEX": r"\d+[.,]\d+°?\s*[NSns]"}},
-            {"TEXT": {"REGEX": r"\d+[.,]\d+°?\s*[EWew]"}}
+            {"LOWER": "latitudine"},
+            {"IS_SPACE": True, "OP": "?"},
+            {"TEXT": {"REGEX": r"\d{1,3}°\d{1,2}'\d{1,2}\"[Nn]"}},
+            {"IS_SPACE": True, "OP": "?"},
+            {"LOWER": "longitudine"},
+            {"IS_SPACE": True, "OP": "?"},
+            {"TEXT": {"REGEX": r"\d{1,3}°\d{1,2}'\d{1,2}\"[Ee]"}}
         ],
         
-        # Labeled coordinates
+        # Format with Lat/Long abbreviations
         [
-            {"LOWER": {"IN": ["latitudine", "lat", "latitude"]}},
-            {"TEXT": {"REGEX": r"\d+[.,]\d+"}},
-            {"LOWER": {"IN": ["longitudine", "long", "longitude"]}},
-            {"TEXT": {"REGEX": r"\d+[.,]\d+"}}
-        ],
-        
-        # DMS format (using standard ASCII characters)
-        [
-            {"TEXT": {"REGEX": r"\d+°\s*\d+[']\s*\d+([.,]\d+)?[\"]\s*[NSns]"}},
-            {"TEXT": {"REGEX": r"\d+°\s*\d+[']\s*\d+([.,]\d+)?[\"]\s*[EWew]"}}
-        ],
-        
-        # Coordinate pairs
-        [
-            {"TEXT": "("},
-            {"TEXT": {"REGEX": r"\d+[.,]\d+"}},
-            {"TEXT": ","},
-            {"TEXT": {"REGEX": r"\d+[.,]\d+"}},
-            {"TEXT": ")"}
+            {"LOWER": {"IN": ["lat", "lat."]}},
+            {"TEXT": {"REGEX": r"\d{1,3}°\d{1,2}'\d{1,2}\"[Nn]"}},
+            {"LOWER": {"IN": ["long", "long."]}},
+            {"TEXT": {"REGEX": r"\d{1,3}°\d{1,2}'\d{1,2}\"[Ee]"}}
         ]
     ])
+    
     
     # Cadastral references
     matcher.add("CADASTRAL", [
@@ -301,46 +324,58 @@ def download_documents(project_id: str, save_path: str) -> list:
 
 def analyze_pdf(pdf_path: str, nlp, matcher: Matcher) -> list:
     """
-    Analyze a single PDF using spaCy NLP with enhanced error handling
+    Analyze a single PDF using spaCy NLP with batch processing
     """
     results = []
+    batch_size = 10  # Number of pages to process at once
     try:
         with pdfplumber.open(pdf_path) as pdf:
-            for page_idx, page in enumerate(pdf.pages, start=1):
-                try:
-                    text = page.extract_text() or ""
-                    if not text.strip():  # Skip empty pages
-                        continue
-                        
-                    doc = nlp(text)
+            # Process pages in batches
+            pages = list(pdf.pages)
+            for i in range(0, len(pages), batch_size):
+                batch_pages = pages[i:i + batch_size]
+                texts = []
+                page_indices = []
+                
+                # Extract text from batch
+                for page_idx, page in enumerate(batch_pages, start=i+1):
+                    try:
+                        text = page.extract_text() or ""
+                        if text.strip():  # Skip empty pages
+                            texts.append(text)
+                            page_indices.append(page_idx)
+                    except Exception as page_error:
+                        logging.warning(f"Skipping page {page_idx} in {pdf_path}: {str(page_error)}")
+                
+                # Process batch with spaCy
+                if texts:
+                    docs = list(nlp.pipe(texts))  # Process texts in batch
                     
-                    # Pattern matching
-                    matches = matcher(doc)
-                    for match_id, start, end in matches:
-                        match_text = doc[start:end].text
-                        pattern_name = nlp.vocab.strings[match_id]
-                        results.append({
-                            'file': pdf_path,
-                            'page': page_idx,
-                            'type': pattern_name,
-                            'text': match_text,
-                            'context': text[max(0, doc[start].idx - 100):min(len(text), doc[end-1].idx + 100)]
-                        })
-                    
-                    # Named Entity Recognition
-                    for ent in doc.ents:
-                        if ent.label_ in ["LOC", "GPE", "ORG"]:
+                    # Analyze each doc
+                    for doc, page_idx in zip(docs, page_indices):
+                        # Pattern matching
+                        matches = matcher(doc)
+                        for match_id, start, end in matches:
+                            match_text = doc[start:end].text
+                            pattern_name = nlp.vocab.strings[match_id]
                             results.append({
                                 'file': pdf_path,
                                 'page': page_idx,
-                                'type': f"NER_{ent.label_}",
-                                'text': ent.text,
-                                'context': text[max(0, ent.start_char - 100):min(len(text), ent.end_char + 100)]
+                                'type': pattern_name,
+                                'text': match_text,
+                                'context': doc.text[max(0, doc[start].idx - 100):min(len(doc.text), doc[end-1].idx + 100)]
                             })
-                            
-                except Exception as page_error:
-                    logging.warning(f"Skipping page {page_idx} in {pdf_path}: {str(page_error)}")
-                    continue
+                        
+                        # Named Entity Recognition
+                        for ent in doc.ents:
+                            if ent.label_ in ["LOC", "GPE", "ORG"]:
+                                results.append({
+                                    'file': pdf_path,
+                                    'page': page_idx,
+                                    'type': f"NER_{ent.label_}",
+                                    'text': ent.text,
+                                    'context': doc.text[max(0, ent.start_char - 100):min(len(doc.text), ent.end_char + 100)]
+                                })
                     
     except Exception as e:
         logging.error(f"Error analyzing PDF {pdf_path}: {str(e)}")
